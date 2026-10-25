@@ -1,0 +1,61 @@
+{
+    "name": "silvershop-suite/card-cache",
+    "description": "Materialised (pre-rendered) product-card HTML stored in a dedicated table, so a product listing concatenates warm card markup instead of rendering + querying every tile per request.",
+    "type": "silverstripe-vendormodule",
+    "keywords": ["silverstripe", "silvershop", "ecommerce", "cache", "performance", "product", "listing"],
+    "license": "BSD-3-Clause",
+    "authors": [
+        {
+            "name": "Remy Vaartjes",
+            "email": "remy@xd.nl",
+            "role": "Lead developer"
+        },
+        {
+            "name": "SilverShop-Suite Contributors"
+        }
+    ],
+    "require": {
+        "php": "^8.3",
+        "silverstripe/framework": "^6.0",
+        "silvershop/core": "^6"
+    },
+    "require-dev": {
+        "silverstripe/recipe-testing": "^4",
+        "silverstripe/sqlite3": "^4",
+        "squizlabs/php_codesniffer": "^3.0"
+    },
+    "suggest": {
+        "silvershop-suite/storefront": "Provides the ProductCard atom + PLP whose grid this cache accelerates.",
+        "symbiote/silverstripe-queuedjobs": "Run the full card-warm as a background job instead of inline."
+    },
+    "scripts": {
+        "test": "vendor/bin/phpunit",
+        "lint": "vendor/bin/phpcs",
+        "lint:fix": "vendor/bin/phpcbf"
+    },
+    "config": {
+        "allow-plugins": {
+            "composer/installers": true,
+            "silverstripe/recipe-plugin": true,
+            "silverstripe/vendor-plugin": true,
+            "php-http/discovery": true
+        }
+    },
+    "extra": {
+        "branch-alias": {
+            "dev-main": "0.x-dev"
+        }
+    },
+    "autoload": {
+        "psr-4": {
+            "SilverShop\\CardCache\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "SilverShop\\CardCache\\Tests\\": "tests/php/"
+        }
+    },
+    "prefer-stable": true,
+    "minimum-stability": "dev"
+}

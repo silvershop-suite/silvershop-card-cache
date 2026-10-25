@@ -1,0 +1,25 @@
+---
+Name: silvershop-cardcache
+After:
+  - '#shop'
+  - '#silvershop-storefront'
+---
+SilverShop\Page\Product:
+  extensions:
+    - SilverShop\CardCache\ProductCardCacheExtension
+SilverShop\Page\ProductCategoryController:
+  extensions:
+    - SilverShop\CardCache\ProductCardCacheControllerExtension
+
+# Off by default as opt-in hygiene — installing changes nothing until you set enabled: true. Per-visitor
+# correctness is handled (stock/price fingerprint, session-neutral bake + page-level CSRF, per-group
+# variant); see the README for the two residual caveats (no-JS wishlist toggle, wishlist heart pre-fill).
+SilverShop\CardCache\ProductCardCacheExtension:
+  enabled: false
+  warm_on_miss: true
+  cache_version: 1
+  # Stock/price are folded into the card hash (volatileFingerprint), so a change re-renders just that
+  # tile. cache_ttl is only a time backstop for drift the fingerprint cannot observe; 0 = none. An
+  # hourly WarmProductCardsTask (cron/queuedjob) keeps the baked baseline fresh for unviewed pages.
+  cache_ttl: 0
+  card_template: 'SilverShop/Storefront/Includes/ProductCard'
