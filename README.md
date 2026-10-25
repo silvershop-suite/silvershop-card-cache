@@ -45,6 +45,17 @@ The storefront PLP opts in with a guarded hook (`$CardCacheEnabled` / `$PrimePro
 `$CachedCard($Pos)`); with the module absent or disabled it falls back to the normal
 `<% include … ProductCard %>`, so it is backward-compatible.
 
+## Requirements
+
+- `silvershop/core ^6`, `silverstripe/framework ^6`, PHP 8.3+.
+- `silvershop/stock` is **optional** — card-cache serves correct cards with or without it (every stock /
+  price read is `hasMethod`-guarded). **But the query-free listing — the point of the module — needs the
+  per-page stock prefetch** (`ProductCategoryStockExtension::primeStockCache` / `primeVariationsCache`).
+  That prefetch is **not in `silvershop/stock` 6.0.0**; it needs a release that includes it (6.1.0+,
+  currently on the `perf/reduce-stock-queries` branch). On earlier stock the module is still correct, but
+  the per-tile `canPurchase()` in the fingerprint re-introduces a stock query per tile — so the listing
+  isn't actually query-free until that stock release lands.
+
 ## Per-visitor correctness (how each volatile bit is handled)
 
 The card shows things that differ per product, per request, or per visitor. Each is kept correct so a
@@ -52,7 +63,9 @@ shared cached card never leaks or goes stale:
 
 - **Stock / cart / price / discount** — folded into the cache hash (`volatileFingerprint()`:
   `canPurchase` + `sellingPrice()` incl. discounts + `StorefrontStockBadge()`). A change re-renders
-  just that tile. On a listing the stock inputs are already batch-prefetched, so it adds no per-tile query.
+  just that tile. On a listing the stock inputs are batch-prefetched **when `silvershop/stock` carries the
+  per-page prefetch** (see [Requirements](#requirements)) — otherwise the fingerprint re-introduces a
+  per-tile stock query.
 - **Wishlist CSRF token** — the stored card is baked session-neutral (no `$WishlistSecurityField`,
   `CardCacheBaking=true`). The PLP emits one live, per-request page-level `SecurityID`
   (`$CardCacheSecurityField`); `wishlist.js` falls back to it (same global `SecurityToken` the wishlist

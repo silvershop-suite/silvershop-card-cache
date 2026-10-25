@@ -27,6 +27,7 @@
     },
     "suggest": {
         "silvershop-suite/storefront": "Provides the ProductCard atom + PLP whose grid this cache accelerates.",
+        "silvershop/stock": "For a truly query-free listing: needs the per-page stock prefetch (6.1.0+, currently on the perf/reduce-stock-queries branch). card-cache is correct on any/no stock, but earlier stock re-introduces a per-tile stock query in the fingerprint.",
         "symbiote/silverstripe-queuedjobs": "Run the full card-warm as a background job instead of inline."
     },
     "scripts": {
