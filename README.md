@@ -49,12 +49,11 @@ The storefront PLP opts in with a guarded hook (`$CardCacheEnabled` / `$PrimePro
 
 - `silvershop/core ^6`, `silverstripe/framework ^6`, PHP 8.3+.
 - `silvershop/stock` is **optional** — card-cache serves correct cards with or without it (every stock /
-  price read is `hasMethod`-guarded). **But the query-free listing — the point of the module — needs the
-  per-page stock prefetch** (`ProductCategoryStockExtension::primeStockCache` / `primeVariationsCache`).
-  That prefetch is **not in `silvershop/stock` 6.0.0**; it needs a release that includes it (6.1.0+,
-  currently on the `perf/reduce-stock-queries` branch). On earlier stock the module is still correct, but
-  the per-tile `canPurchase()` in the fingerprint re-introduces a stock query per tile — so the listing
-  isn't actually query-free until that stock release lands.
+  price read is `hasMethod`-guarded). The module's speed win is **render + N+1 caching** and does **not**
+  depend on stock internals: the fingerprint reads `canPurchase()` per tile, but on a normal (co-located)
+  DB that's a cheap indexed lookup — negligible. A per-page stock *prefetch* can batch those reads, which
+  only matters on a **remote / networked DB** (round-trip cost); on a local DB batching is actually
+  slightly slower, so it is not needed or recommended here. In short: card-cache stands on its own.
 
 ## Per-visitor correctness (how each volatile bit is handled)
 
