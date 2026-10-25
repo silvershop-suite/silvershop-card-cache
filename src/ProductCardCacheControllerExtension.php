@@ -37,9 +37,6 @@ class ProductCardCacheControllerExtension extends Extension
             return '';
         }
         $list = $this->owner->Products();
-        if (!$list) {
-            return '';
-        }
         $ids = [];
         foreach ($list as $product) {
             $ids[] = (int) $product->ID;

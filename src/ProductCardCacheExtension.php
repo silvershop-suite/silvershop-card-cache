@@ -8,7 +8,6 @@ use SilverStripe\Control\Controller;
 use SilverStripe\Core\Config\Config;
 use SilverStripe\Core\Extension;
 use SilverStripe\ORM\FieldType\DBDatetime;
-use SilverStripe\ORM\FieldType\DBField;
 use SilverStripe\ORM\FieldType\DBHTMLText;
 use SilverStripe\Security\Security;
 
@@ -59,14 +58,19 @@ class ProductCardCacheExtension extends Extension
      *  which both breaks equality lookups and defeats the (ProductID, Variant) unique index. */
     public const DEFAULT_VARIANT = 'default';
 
-    /** @var array<string, array{html: string, hash: string, built: int}> request-static map, key "variant\0productID" */
-    private static array $map = [];
+    /**
+     * Runtime (not config) caches: protected static so SilverStripe's config system — which manages
+     * `private static` — leaves them alone and they stay plain per-request statics.
+     *
+     * @var array<string, array{html: string, hash: string, built: int}> request-static map, key "variant\0productID"
+     */
+    protected static array $map = [];
 
     /** @var array<string, bool> variants whose page rows have been primed this request */
-    private static array $primed = [];
+    protected static array $primed = [];
 
     /** Request-memoised active variant (one Groups() query at most per request). */
-    private static ?string $variantResolved = null;
+    protected static ?string $variantResolved = null;
 
     public function CardCacheEnabled(): bool
     {
@@ -150,7 +154,7 @@ class ProductCardCacheExtension extends Extension
             && ($ttl <= 0 || (time() - (int) ($hit['built'] ?? 0)) <= $ttl);
 
         if ($fresh) {
-            return DBField::create_field('HTMLText', $hit['html']);
+            return $this->htmlField($hit['html']);
         }
 
         $html = (string) $this->renderCard($pos);
@@ -159,7 +163,16 @@ class ProductCardCacheExtension extends Extension
             self::$map[$key] = ['html' => $html, 'hash' => $expected, 'built' => time()];
         }
 
-        return DBField::create_field('HTMLText', $html);
+        return $this->htmlField($html);
+    }
+
+    /** Wrap raw card HTML as a DBHTMLText for the template. */
+    private function htmlField(string $html): DBHTMLText
+    {
+        $field = DBHTMLText::create();
+        $field->setValue($html);
+
+        return $field;
     }
 
     /**
@@ -293,7 +306,7 @@ class ProductCardCacheExtension extends Extension
      */
     protected function pageProductIDs(): array
     {
-        $controller = Controller::has_curr() ? Controller::curr() : null;
+        $controller = Controller::curr();
         if (!$controller || !$controller->hasMethod('Products')) {
             return [(int) $this->owner->ID];
         }
