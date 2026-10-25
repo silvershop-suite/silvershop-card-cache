@@ -1,5 +1,7 @@
 # silvershop-suite/card-cache
 
+[![CI](https://github.com/silvershop-suite/silvershop-card-cache/actions/workflows/ci.yml/badge.svg)](https://github.com/silvershop-suite/silvershop-card-cache/actions/workflows/ci.yml)
+
 Materialised (pre-rendered) product-card HTML for SilverShop listings.
 
 A product listing normally renders the `ProductCard` template for every tile on every request, and
