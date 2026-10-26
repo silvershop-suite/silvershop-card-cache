@@ -154,7 +154,7 @@ class ProductCardCacheExtension extends Extension
             && ($ttl <= 0 || (time() - (int) ($hit['built'] ?? 0)) <= $ttl);
 
         if ($fresh) {
-            return $this->htmlField($hit['html']);
+            return DBHTMLText::create()->setValue($hit['html']);
         }
 
         $html = (string) $this->renderCard($pos);
@@ -163,16 +163,7 @@ class ProductCardCacheExtension extends Extension
             self::$map[$key] = ['html' => $html, 'hash' => $expected, 'built' => time()];
         }
 
-        return $this->htmlField($html);
-    }
-
-    /** Wrap raw card HTML as a DBHTMLText for the template. */
-    private function htmlField(string $html): DBHTMLText
-    {
-        $field = DBHTMLText::create();
-        $field->setValue($html);
-
-        return $field;
+        return DBHTMLText::create()->setValue($html);
     }
 
     /**
