@@ -62,9 +62,8 @@ shared cached card never leaks or goes stale:
 
 - **Stock / cart / price / discount** — folded into the cache hash (`volatileFingerprint()`:
   `canPurchase` + `sellingPrice()` incl. discounts + `StorefrontStockBadge()`). A change re-renders
-  just that tile. On a listing the stock inputs are batch-prefetched **when `silvershop/stock` carries the
-  per-page prefetch** (see [Requirements](#requirements)) — otherwise the fingerprint re-introduces a
-  per-tile stock query.
+  just that tile. The fingerprint reads `canPurchase()` per tile, a cheap indexed lookup on a normal
+  co-located DB (see [Requirements](#requirements)).
 - **Wishlist CSRF token** — the stored card is baked session-neutral (no `$WishlistSecurityField`,
   `CardCacheBaking=true`). The PLP emits one live, per-request page-level `SecurityID`
   (`$CardCacheSecurityField`); `wishlist.js` falls back to it (same global `SecurityToken` the wishlist
@@ -91,4 +90,12 @@ shared cached card never leaks or goes stale:
 Working, with per-visitor correctness handled (stock/price fingerprint, session-neutral bake +
 page-level CSRF, per-group variant) — safe to enable on a multi-user storefront modulo the two caveats
 above. Measured on a 1526-product bed: a 96-card page 1074→~327 queries, and /shop (12 cards) ~380→~209
-with TTFB ~0.4s. Author: Remy Vaartjes. BSD-3-Clause.
+with TTFB ~0.4s.
+
+## License
+
+BSD-3-Clause. See [LICENSE](LICENSE).
+
+## Credits
+
+Built and maintained by **Remy Vaartjes** (<remy@xd.nl>) — part of the **SilverShop-Suite**.
