@@ -11,7 +11,7 @@ use SilverStripe\ORM\DataObject;
  *
  * Deliberately a dedicated table rather than a column on Product: it stays out of every
  * `Product::get()` hydration, can hold several rows per product (one per {@see $Variant} —
- * locale / currency / member-group, whatever a project keys on), and is truncated or rebuilt
+ * audience and locale, plus whatever else a project keys on), and is truncated or rebuilt
  * independently of the catalogue. A listing primes the whole page with one `WHERE ProductID IN (…)`
  * read and then emits the stored HTML, so there is no per-tile render and no per-tile query.
  *
@@ -25,7 +25,8 @@ class CachedProductCard extends DataObject
         // Plain Int (not a has_one) so a stale/orphan row can never block a Product delete and the
         // lookup is a flat indexed scan. The owning Product is cleaned up via the extension hooks.
         'ProductID' => 'Int',
-        // '' = the default anonymous variant. Room for 'locale:nl_NL', 'cur:EUR', 'grp:wholesale', …
+        // "<audience>@<locale>", e.g. 'default@nl_NL' (anonymous) or 'g:2,5@en_US' (member groups);
+        // projects can widen it (currency, …) via the updateProductCardVariant hook.
         'Variant' => 'Varchar(100)',
         // Fingerprint of the inputs the fragment was built from; a mismatch on read = treat as a miss.
         'Hash' => 'Varchar(40)',

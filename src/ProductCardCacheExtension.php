@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace SilverShop\CardCache;
 
+use SilverShop\Page\Product;
 use SilverStripe\Control\Controller;
 use SilverStripe\Core\Config\Config;
 use SilverStripe\Core\Extension;
+use SilverStripe\i18n\i18n;
 use SilverStripe\ORM\FieldType\DBDatetime;
 use SilverStripe\ORM\FieldType\DBHTMLText;
 use SilverStripe\Security\Security;
@@ -69,8 +71,11 @@ class ProductCardCacheExtension extends Extension
     /** @var array<string, bool> variants whose page rows have been primed this request */
     protected static array $primed = [];
 
-    /** Request-memoised active variant (one Groups() query at most per request). */
-    protected static ?string $variantResolved = null;
+    /** Request-memoised audience part of the variant (one Groups() query at most per request). */
+    protected static ?string $audienceResolved = null;
+
+    /** @var array<string, string> request-memoised active variant per locale */
+    protected static array $variantResolved = [];
 
     public function CardCacheEnabled(): bool
     {
@@ -78,30 +83,72 @@ class ProductCardCacheExtension extends Extension
     }
 
     /**
-     * The active cache variant — isolates cards whose content differs per audience so one visitor's
-     * card is never served to another. Anonymous visitors share {@see DEFAULT_VARIANT}; a logged-in
-     * member is keyed by their group IDs, because group-based pricing (silvershop/discounts
-     * SpecificPrice.GroupID) makes `sellingPrice()` member-specific. So the warm task fills the public
-     * 'default' variant, and each member group lazily warms its own rows — no cross-member price leak.
-     * Projects can widen the key (currency, locale) via the updateProductCardVariant hook.
-     * Memoised per request so it costs at most one Groups() query.
+     * The active cache variant — isolates cards whose content differs per audience or language, so one
+     * visitor's card is never served to another. It is "<audience>@<locale>":
+     * - audience: anonymous visitors share {@see DEFAULT_VARIANT}; a logged-in member is keyed by their
+     *   group IDs, because group-based pricing (silvershop/discounts SpecificPrice.GroupID) makes
+     *   `sellingPrice()` member-specific — no cross-member price leak;
+     * - locale: the card's text is translated (`<%t %>`) and, with Fluent, its content is localised, so
+     *   each language gets its own rows (Fluent sets the i18n locale per request).
+     * Projects can widen the key further (currency, shipping country, …) with the
+     * `updateProductCardVariant(string &$variant, string $locale)` extension hook on Product.
+     * Memoised per request and locale, so it costs at most one Groups() query.
      */
     public static function activeVariant(): string
     {
-        if (self::$variantResolved !== null) {
-            return self::$variantResolved;
+        $locale = (string) i18n::get_locale();
+        if (isset(self::$variantResolved[$locale])) {
+            return self::$variantResolved[$locale];
         }
 
-        $variant = self::DEFAULT_VARIANT;
+        return self::$variantResolved[$locale] = static::variantFor(static::audienceVariant(), $locale);
+    }
+
+    /**
+     * The variant key for an audience ({@see DEFAULT_VARIANT} or "g:<group ids>") in a locale, with the
+     * project's updateProductCardVariant hook applied. Used by the read path and by the warm task, so a
+     * warmed row is found by the request that needs it.
+     */
+    public static function variantFor(string $audience, string $locale): string
+    {
+        $variant = $audience . '@' . $locale;
+        Product::singleton()->extend('updateProductCardVariant', $variant, $locale);
+
+        return $variant;
+    }
+
+    /**
+     * The audience part of the variant: {@see DEFAULT_VARIANT} for anonymous visitors (and members
+     * without groups), else the member's sorted group IDs.
+     */
+    public static function audienceVariant(): string
+    {
+        if (self::$audienceResolved !== null) {
+            return self::$audienceResolved;
+        }
+
+        $audience = self::DEFAULT_VARIANT;
         $member = Security::getCurrentUser();
         if ($member) {
             $groupIds = $member->Groups()->sort('ID')->column('ID');
             if ($groupIds) {
-                $variant = 'g:' . implode(',', array_map('intval', $groupIds));
+                $audience = 'g:' . implode(',', array_map('intval', $groupIds));
             }
         }
 
-        return self::$variantResolved = $variant;
+        return self::$audienceResolved = $audience;
+    }
+
+    /**
+     * Forget the request-memoised variant (and primed rows). For long-running processes and tests that
+     * change the logged-in member within one request.
+     */
+    public static function resetRequestCache(): void
+    {
+        self::$audienceResolved = null;
+        self::$variantResolved = [];
+        self::$map = [];
+        self::$primed = [];
     }
 
     /**

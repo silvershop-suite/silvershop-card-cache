@@ -27,7 +27,8 @@ lives in the DB) and primes the whole page in one query.
 - **`ProductCardCacheControllerExtension`** (on `ProductCategoryController`) — `CardCacheEnabled` gate
   and `PrimeProductCardCache` one-shot page priming for the template.
 - **`WarmProductCardsTask`** — `/dev/tasks/SilverShop-CardCache-Dev-WarmProductCardsTask`
-  (`?limit=`, `?variant=`, `?purge=1`) — proactive push warming.
+  (`?locale=nl_NL,en_US`, `?limit=`, `?variant=`, `?purge=1`) — proactive push warming, per locale
+  (default: the current locale). With Fluent installed it also switches the content locale.
 
 ## Enabling it
 
@@ -44,6 +45,12 @@ noted caveats (no-JS wishlist toggle; wishlist heart pre-fill).
 The storefront PLP opts in with a guarded hook (`$CardCacheEnabled` / `$PrimeProductCardCache` /
 `$CachedCard($Pos)`); with the module absent or disabled it falls back to the normal
 `<% include … ProductCard %>`, so it is backward-compatible.
+
+## Upgrading from 1.0
+
+1.1 adds the locale to the cache key, so rows stored by 1.0 (variant `default` / `g:…`) are no longer
+read: cards re-render and re-store on first view. To clean up and pre-fill, run the warm task with
+`--purge`, then once per locale (`--locale=…`).
 
 ## Requirements
 
@@ -80,6 +87,12 @@ shared cached card never leaks or goes stale:
   `SpecificPrice.GroupID`), so the cache is keyed per audience (`activeVariant()`): anonymous share
   `default` (what the warm task fills); each logged-in member's groups get their own lazily-warmed
   rows. No cross-member price leak.
+- **Language** — the card's text is translated and, with Fluent, its content is localised, so the key
+  also carries the locale: `<audience>@<locale>`, e.g. `default@nl_NL`, `g:2,5@en_US`. Each language
+  gets its own rows; warm each one (`--locale=nl_NL,de_DE,…`) or let `warm_on_miss` fill them lazily.
+- **Anything else a card varies on** (currency, shipping country, …) — widen the key with the
+  `updateProductCardVariant(string &$variant, string $locale)` extension hook on `Product`. The warm
+  task builds keys through the same hook, so warmed rows match what requests read.
 - **Related-object edits** the fingerprint can't see (brand rename, new review, colour swatch) — bounded
   by a `WarmProductCardsTask` re-run (hourly cron/queuedjob) or a `cache_version` bump.
 - **Position** — the first-few-tiles eager-image hint (`Eager=$Pos`) isn't baked per position (minor;

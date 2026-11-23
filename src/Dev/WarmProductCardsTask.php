@@ -12,6 +12,7 @@ use SilverStripe\Control\HTTPRequest;
 use SilverStripe\Control\Session;
 use SilverStripe\Core\Injector\Injector;
 use SilverStripe\Dev\BuildTask;
+use SilverStripe\i18n\i18n;
 use SilverStripe\PolyExecution\PolyOutput;
 use SilverStripe\Versioned\Versioned;
 use Symfony\Component\Console\Command\Command;
@@ -23,6 +24,9 @@ use Symfony\Component\Console\Input\InputOption;
  * card once and upsert it into {@see CachedProductCard}, so the first listing visitor already hits a
  * warm cache instead of paying the cold render. Re-run any time to refresh; `--purge` empties the
  * table instead.
+ *
+ * Cards are cached per locale, so warm every language the shop serves: `--locale=nl_NL,en_US`
+ * (default: the current locale). With Fluent installed the content locale is switched too.
  *
  * Addressable at /dev/tasks/SilverShop-CardCache-Dev-WarmProductCardsTask (e.g. ?limit=200, ?purge=1).
  */
@@ -42,8 +46,15 @@ class WarmProductCardsTask extends BuildTask
                 'variant',
                 null,
                 InputOption::VALUE_OPTIONAL,
-                'Cache variant key to build',
+                'Audience to build (the anonymous default, or "g:<group ids>")',
                 ProductCardCacheExtension::DEFAULT_VARIANT
+            ),
+            new InputOption(
+                'locale',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'Comma-separated locales to build (default: the current locale)',
+                ''
             ),
             new InputOption('purge', null, InputOption::VALUE_NONE, 'Empty the card-cache table, then stop'),
         ];
@@ -78,10 +89,25 @@ class WarmProductCardsTask extends BuildTask
 
     private function warm(InputInterface $input, PolyOutput $output): int
     {
-        $variant = (string) $input->getOption('variant');
+        $audience = (string) $input->getOption('variant');
         $limit = max(0, (int) $input->getOption('limit'));
+        $locales = static::parseLocales((string) $input->getOption('locale'));
 
         Versioned::set_stage(Versioned::LIVE);
+
+        foreach ($locales as $locale) {
+            $result = static::inLocale($locale, fn (): int => $this->warmLocale($audience, $locale, $limit, $output));
+            if ($result !== Command::SUCCESS) {
+                return $result;
+            }
+        }
+
+        return Command::SUCCESS;
+    }
+
+    private function warmLocale(string $audience, string $locale, int $limit, PolyOutput $output): int
+    {
+        $variant = ProductCardCacheExtension::variantFor($audience, $locale);
         $products = Product::get();
         if ($limit > 0) {
             $products = $products->limit($limit);
@@ -110,5 +136,39 @@ class WarmProductCardsTask extends BuildTask
         ));
 
         return Command::SUCCESS;
+    }
+
+    /**
+     * The --locale option as a list; empty means the current locale.
+     *
+     * @return list<string>
+     */
+    public static function parseLocales(string $option): array
+    {
+        $locales = array_values(array_unique(array_filter(array_map('trim', explode(',', $option)))));
+
+        return $locales ?: [(string) i18n::get_locale()];
+    }
+
+    /**
+     * Run $callback with $locale as the translation locale and, when Fluent is installed, as the content
+     * locale, so the stored card matches what a visitor in that locale is served.
+     *
+     * @template T
+     * @param callable(): T $callback
+     * @return T
+     */
+    public static function inLocale(string $locale, callable $callback): mixed
+    {
+        return i18n::with_locale($locale, function () use ($locale, $callback) {
+            $fluentState = 'TractorCow\\Fluent\\State\\FluentState';
+            if (class_exists($fluentState)) {
+                return $fluentState::singleton()->withState(function ($state) use ($locale, $callback) {
+                    $state->setLocale($locale);
+                    return $callback();
+                });
+            }
+            return $callback();
+        });
     }
 }
