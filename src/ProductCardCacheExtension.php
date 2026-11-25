@@ -12,6 +12,7 @@ use SilverStripe\i18n\i18n;
 use SilverStripe\ORM\FieldType\DBDatetime;
 use SilverStripe\ORM\FieldType\DBHTMLText;
 use SilverStripe\Security\Security;
+use SilverStripe\Security\SecurityToken;
 
 /**
  * Applied to {@see \SilverShop\Page\Product}. Serves a product's card from {@see CachedProductCard}
@@ -33,10 +34,10 @@ use SilverStripe\Security\Security;
  * extra per-tile query. Publishing / unpublishing / deleting the product still drops its rows, and an
  * optional `cache_ttl` bounds any staleness the fingerprint cannot observe.
  *
- * Remaining seam: the card also carries per-session bits (wishlist CSRF token, wishlist/compare
- * pressed state) that are NOT in the fingerprint — a shared cached card shows one visitor's token/
- * state to the next. That is why the module is off by default; carve those out (or restrict to
- * anonymous) before enabling on a live multi-user storefront. See the README.
+ * Per visitor: the stored card holds a placeholder instead of a security token ({@see withoutToken()}),
+ * and whoever gets the card gets their own token in its place ({@see withOwnToken()}), so the
+ * add-to-cart form on a cached card also works without script. Wishlist/compare pressed state is baked
+ * as "off" and filled in by the storefront's script. See the README.
  *
  * @property \SilverShop\Page\Product $owner
  */
@@ -59,6 +60,12 @@ class ProductCardCacheExtension extends Extension
     /** Sentinel for the default/anonymous variant. Must be non-empty: a Varchar nullifies '' to NULL,
      *  which both breaks equality lookups and defeats the (ProductID, Variant) unique index. */
     public const DEFAULT_VARIANT = 'default';
+
+    /** Stands in for the security token in a stored card; never part of a served one. */
+    public const TOKEN_PLACEHOLDER = '__silvershop_card_cache_token__';
+
+    /** Part of the hash: raise it when the stored format changes, so rows of an older version are rebuilt. */
+    protected const STORAGE_FORMAT = 2;
 
     /**
      * Runtime (not config) caches: protected static so SilverStripe's config system — which manages
@@ -201,13 +208,13 @@ class ProductCardCacheExtension extends Extension
             && ($ttl <= 0 || (time() - (int) ($hit['built'] ?? 0)) <= $ttl);
 
         if ($fresh) {
-            return DBHTMLText::create()->setValue($hit['html']);
+            return DBHTMLText::create()->setValue(static::withOwnToken($hit['html']));
         }
 
         $html = (string) $this->renderCard($pos);
         if ((bool) Config::inst()->get(static::class, 'warm_on_miss')) {
             $this->storeCard($variant, $expected, $html);
-            self::$map[$key] = ['html' => $html, 'hash' => $expected, 'built' => time()];
+            self::$map[$key] = ['html' => static::withoutToken($html), 'hash' => $expected, 'built' => time()];
         }
 
         return DBHTMLText::create()->setValue($html);
@@ -241,6 +248,7 @@ class ProductCardCacheExtension extends Extension
             (int) $this->owner->ID,
             (string) $this->owner->LastEdited,
             $variant,
+            static::STORAGE_FORMAT,
             (int) Config::inst()->get(static::class, 'cache_version'),
             $this->volatileFingerprint(),
         ]));
@@ -290,6 +298,9 @@ class ProductCardCacheExtension extends Extension
         return implode('|', $parts);
     }
 
+    /**
+     * Store a card as rendered for the current visitor (or the warm task); their security token is left out.
+     */
     public function storeCard(string $variant, string $hash, string $html): void
     {
         $existing = CachedProductCard::get()->filter([
@@ -301,7 +312,7 @@ class ProductCardCacheExtension extends Extension
         $row->ProductID = (int) $this->owner->ID;
         $row->Variant = $variant;
         $row->Hash = $hash;
-        $row->HTML = $html;
+        $row->HTML = static::withoutToken($html);
         $row->LastBuilt = DBDatetime::now()->getValue();
 
         try {
@@ -309,6 +320,40 @@ class ProductCardCacheExtension extends Extension
         } catch (\Throwable $e) {
             // A concurrent cold request may have inserted the same (ProductID, Variant) first; the
             // unique index then rejects this write. Harmless — the row exists either way.
+        }
+    }
+
+    /**
+     * A rendered card with the current visitor's security token (in the add-to-cart link, for one) replaced
+     * by the placeholder, fit to share.
+     */
+    public static function withoutToken(string $html): string
+    {
+        // Content that happens to hold the placeholder must not get a visitor's token later on.
+        $html = str_replace(self::TOKEN_PLACEHOLDER, '', $html);
+        $token = static::currentToken();
+
+        return $token === '' ? $html : str_replace($token, self::TOKEN_PLACEHOLDER, $html);
+    }
+
+    /**
+     * A stored card with the current visitor's security token filled in. A card without a token starts no
+     * session.
+     */
+    public static function withOwnToken(string $html): string
+    {
+        return str_contains($html, self::TOKEN_PLACEHOLDER)
+            ? str_replace(self::TOKEN_PLACEHOLDER, static::currentToken(), $html)
+            : $html;
+    }
+
+    protected static function currentToken(): string
+    {
+        try {
+            return (string) SecurityToken::inst()->getValue();
+        } catch (\Throwable $e) {
+            // No request, so no session: a card rendered here cannot hold a token.
+            return '';
         }
     }
 

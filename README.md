@@ -46,6 +46,11 @@ The storefront PLP opts in with a guarded hook (`$CardCacheEnabled` / `$PrimePro
 `$CachedCard($Pos)`); with the module absent or disabled it falls back to the normal
 `<% include … ProductCard %>`, so it is backward-compatible.
 
+## Upgrading from 1.1.0
+
+Nothing to do: cards stored by 1.1.0 or older hold one visitor's security token (quick add answered 400
+for everyone else), so they are no longer read. They are rendered again on first view, or run the warm task.
+
 ## Upgrading from 1.0
 
 1.1 adds the locale to the cache key, so rows stored by 1.0 (variant `default` / `g:…`) are no longer
@@ -71,18 +76,23 @@ shared cached card never leaks or goes stale:
   `canPurchase` + `sellingPrice()` incl. discounts + `StorefrontStockBadge()`). A change re-renders
   just that tile. The fingerprint reads `canPurchase()` per tile, a cheap indexed lookup on a normal
   co-located DB (see [Requirements](#requirements)).
+- **Security token in the add-to-cart link** — the stored card holds a placeholder instead of a token;
+  each visitor gets their own token in its place when the card is served. Quick add on a cached card
+  therefore works with and without script, for whoever filled the cache and for everyone after. The same
+  goes for any other use of the global `SecurityToken` in a project's own card template.
 - **Wishlist CSRF token** — the stored card is baked session-neutral (no `$WishlistSecurityField`,
   `CardCacheBaking=true`). The PLP emits one live, per-request page-level `SecurityID`
   (`$CardCacheSecurityField`); `wishlist.js` falls back to it (same global `SecurityToken` the wishlist
   controller checks). *No-JS caveat:* with the token only page-level, a no-JS wishlist POST has no
-  in-form token — the JS path works for everyone; the no-JS fallback for that one control does not.
+  in-form token — the JS path works for everyone; the no-JS fallback for that one control does not (a
+  card template that prints `$WishlistSecurityField` when baking too gets the visitor's token at serve time).
 - **Wishlist / compare pressed state** — baked `aria-pressed="false"`, then hydrated per visitor on load:
   compare.js reconciles from the session compare-tray, and the storefront `wishlist.js` (`hydrateWishlist`)
   fetches the viewer's wishlist IDs from `wishlist/state` (`WishlistController::state`, member list or guest
   session) and fills the matching hearts + any `[data-wishlist-count]` on load (one request, only when a
   heart or badge is on the page).
   *No-JS caveat remains:* the heart form still has no in-form token, so a no-JS wishlist toggle won't
-  submit (JS works for all); a server-side per-request token splice would restore it.
+  submit (JS works for all).
 - **Member-group pricing** — `sellingPrice()` is group-specific (silvershop/discounts
   `SpecificPrice.GroupID`), so the cache is keyed per audience (`activeVariant()`): anonymous share
   `default` (what the warm task fills); each logged-in member's groups get their own lazily-warmed
